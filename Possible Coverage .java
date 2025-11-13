@@ -1,28 +1,38 @@
 // ---------------------------------------------------
-// CONDITION 4:
-// Take POSSIBLE_VALIDATION values (in capital) as reference,
-// Check against SCENARIO_INFO, and include ONLY those
-// validations which are present in POSSIBLE_VALIDATION
-// but NOT mentioned anywhere in SCENARIO_INFO.
+// CONDITION 4 (Corrected):
+// Include ONLY those values from POSSIBLE_VALIDATION
+// that are NOT present in SCENARIO_INFO column (token-based match).
 // ---------------------------------------------------
-
 else {
 
     StringBuilder sb = new StringBuilder();
 
-    // Split POSSIBLE_VALIDATION values
+    // Split possible validations
     String[] validations = possibleVal.split(",");
 
-    // Upper-case scenarioInfo for safe comparison
-    String scenarioUpper = scenarioInfo.toUpperCase();
+    // Normalize SCENARIO_INFO into comparable tokens
+    // Remove hyphens, underscores, spaces, convert to upper
+    String scenarioNormalized = scenarioInfo
+            .replace("-", "")
+            .replace("_", "")
+            .replace(" ", "")
+            .toUpperCase();
 
     for (String v : validations) {
-        if (v == null) continue;
-        String val = v.trim().toUpperCase();
 
-        // If NOT present in SCENARIO_INFO, include it
-        if (!scenarioUpper.contains(val)) {
-            sb.append(val).append("\n");
+        if (v == null) continue;
+
+        // Clean/normalize the validation token similarly
+        String originalVal = v.trim();                    // final text to print
+        String valNorm = originalVal
+                .replace("-", "")
+                .replace("_", "")
+                .replace(" ", "")
+                .toUpperCase();
+
+        // Match token-to-token
+        if (!scenarioNormalized.contains(valNorm)) {
+            sb.append(originalVal.toUpperCase()).append("\n");
         }
     }
 
