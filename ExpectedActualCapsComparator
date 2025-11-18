@@ -1,0 +1,113 @@
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+import java.io.*;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class ExpectedActualCapsComparator {
+
+    public static void main(String[] args) throws Exception {
+        String inputFile = "input.xlsx";
+        String outputFile = "output_with_missing.xlsx";
+        compareExcelAndWriteMissing(inputFile, outputFile, 0, 1, 2); // A -> expected (0), B -> actual (1), C -> output (2)
+        System.out.println("Done. Output written to " + outputFile);
+    }
+
+    public static void compareExcelAndWriteMissing(String inputPath, String outputPath,
+                                                   int expectedCol, int actualCol, int outputCol) throws IOException {
+
+        try (FileInputStream fis = new FileInputStream(inputPath);
+             Workbook wb = new XSSFWorkbook(fis)) {
+
+            Sheet sheet = wb.getSheetAt(0);
+
+            // If your sheet has a header row, set startRow = sheet.getFirstRowNum() + 1
+            int startRow = sheet.getFirstRowNum();
+            for (int r = startRow; r <= sheet.getLastRowNum(); r++) {
+                Row row = sheet.getRow(r);
+                if (row == null) continue;
+
+                String expected = getCellString(row.getCell(expectedCol));
+                String actual = getCellString(row.getCell(actualCol));
+
+                String missing = findMissingCapsStatuses(expected, actual);
+
+                Cell outCell = row.getCell(outputCol);
+                if (outCell == null) outCell = row.createCell(outputCol);
+                outCell.setCellValue(missing);
+            }
+
+            try (FileOutputStream fos = new FileOutputStream(outputPath)) {
+                wb.write(fos);
+            }
+        }
+    }
+
+    /**
+     * Extracts uppercase tokens from expected and actual, then returns
+     * those tokens that are present in expected but not in actual.
+     *
+     * Token definition used here: contiguous characters matching [A-Z0-9_]
+     * (so letters A-Z, digits, and underscore). Adjust regex if you want hyphens.
+     */
+    public static String findMissingCapsStatuses(String expectedCell, String actualCell) {
+        Set<String> expectedTokens = extractCapsTokens(expectedCell);
+        Set<String> actualTokens = extractCapsTokens(actualCell);
+
+        // Compute expected - actual
+        List<String> missing = new ArrayList<>();
+        for (String tok : expectedTokens) {
+            if (!actualTokens.contains(tok)) missing.add(tok);
+        }
+
+        // Sort for deterministic output
+        Collections.sort(missing);
+        return String.join(", ", missing);
+    }
+
+    // regex-based extractor of CAPS tokens (A-Z, digits, underscore)
+    private static final Pattern CAPS_PATTERN = Pattern.compile("\\b([A-Z0-9_]+)\\b");
+
+    private static Set<String> extractCapsTokens(String text) {
+        Set<String> out = new LinkedHashSet<>();
+        if (text == null || text.trim().isEmpty()) return out;
+        Matcher m = CAPS_PATTERN.matcher(text);
+        while (m.find()) {
+            String token = m.group(1);
+            // Optionally you can ignore single-letter tokens:
+            // if (token.length() < 2) continue;
+            out.add(token);
+        }
+        return out;
+    }
+
+    // helper to get cell as string
+    private static String getCellString(Cell cell) {
+        if (cell == null) return "";
+        switch (cell.getCellType()) {
+            case STRING:
+                return cell.getStringCellValue();
+            case NUMERIC:
+                // avoid scientific formatting surprises
+                double d = cell.getNumericCellValue();
+                if (d == Math.rint(d)) {
+                    return String.valueOf((long) d);
+                } else {
+                    return String.valueOf(d);
+                }
+            case BOOLEAN:
+                return String.valueOf(cell.getBooleanCellValue());
+            case FORMULA:
+                try { return cell.getStringCellValue(); }
+                catch (Exception e) {
+                    try { return String.valueOf(cell.getNumericCellValue()); }
+                    catch (Exception ex) { return ""; }
+                }
+            case BLANK:
+            default:
+                return "";
+        }
+    }
+}
