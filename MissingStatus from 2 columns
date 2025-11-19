@@ -16,9 +16,9 @@ public class MissingStatusFinder {
 
     /**
      * Extracts CAPS tokens from possibleValidations and returns missing ones (not found in scenarioInfo).
-     * Returned as a comma-separated String (empty string if none).
+     * Returned as newline-separated String (empty string if none).
      *
-     * Uses StringBuilder to build the final string (as requested earlier).
+     * Uses StringBuilder to build the final string (one token per line).
      */
     public static String findMissingStatuses(String possibleValidations, String scenarioInfo) {
         if (possibleValidations == null || possibleValidations.trim().isEmpty()) {
@@ -42,13 +42,13 @@ public class MissingStatusFinder {
         StringBuilder missing = new StringBuilder();
         for (String token : expectedTokens) {
             // Build regex to check whole-token presence in scenarioInfo
-            // We escape token to be safe, and use word boundaries
             Pattern tokenPattern = Pattern.compile("\\b" + Pattern.quote(token) + "\\b");
             Matcher actualMatcher = tokenPattern.matcher(scenarioInfo);
 
             if (!actualMatcher.find()) {
                 if (missing.length() > 0) {
-                    missing.append(", ");
+                    // newline separator for Excel cell (will show as new line when wrapText is true)
+                    missing.append("\n");
                 }
                 missing.append(token);
             }
@@ -58,7 +58,7 @@ public class MissingStatusFinder {
     }
 
     /**
-     * Example method that reads an input Excel file and writes missing statuses to the 3rd column.
+     * Reads an input Excel file and writes missing statuses to the 3rd column (one-per-line in cell).
      * Adjust INPUT_FILE, OUTPUT_FILE, sheet name, and column indices as needed.
      */
     public static void processExcel(String inputFilePath, String outputFilePath) throws IOException {
@@ -75,9 +75,19 @@ public class MissingStatusFinder {
                 throw new IllegalArgumentException("Sheet not found in workbook");
             }
 
+            // Create a reusable cell style for wrapped text
+            CellStyle wrapStyle = workbook.createCellStyle();
+            wrapStyle.setWrapText(true);
+
+            // Optionally set a font or vertical alignment if you prefer
+            wrapStyle.setVerticalAlignment(VerticalAlignment.TOP);
+
             // Assuming first row is header; start from row 1
             int firstDataRow = sheet.getFirstRowNum() + 1;
             int lastRow = sheet.getLastRowNum();
+
+            // default row height in points (used to compute new height)
+            float defaultRowHeightPoints = sheet.getDefaultRowHeightInPoints();
 
             for (int r = firstDataRow; r <= lastRow; r++) {
                 Row row = sheet.getRow(r);
@@ -93,8 +103,20 @@ public class MissingStatusFinder {
 
                 // Write to result column
                 Cell resultCell = row.getCell(resultColIndex, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+                resultCell.setCellStyle(wrapStyle);
                 resultCell.setCellValue(missing);
+
+                // Adjust row height if we have multiple lines so the wrapped text is visible.
+                if (missing != null && !missing.isEmpty()) {
+                    int lines = countLines(missing);
+                    // small multiplier to provide spacing; adjust 1.2f as needed
+                    float newHeight = Math.max(defaultRowHeightPoints, lines * defaultRowHeightPoints * 1.2f);
+                    row.setHeightInPoints(newHeight);
+                }
             }
+
+            // Optionally autosize the result column so that width fits (note: autosize is expensive on large sheets)
+            sheet.autoSizeColumn(resultColIndex);
 
             // Write out to new file (or overwrite)
             try (FileOutputStream fos = new FileOutputStream(outputFilePath)) {
@@ -103,35 +125,21 @@ public class MissingStatusFinder {
         }
     }
 
+    private static int countLines(String s) {
+        if (s == null || s.isEmpty()) return 0;
+        // Count occurrences of '\n' + 1
+        int lines = 1;
+        int idx = 0;
+        while ((idx = s.indexOf('\n', idx)) != -1) {
+            lines++;
+            idx++; // move past found char
+        }
+        return lines;
+    }
+
     private static String getCellStringValue(Cell cell) {
         if (cell == null) return "";
         switch (cell.getCellType()) {
             case STRING: return cell.getStringCellValue();
             case NUMERIC: return String.valueOf(cell.getNumericCellValue());
-            case BOOLEAN: return String.valueOf(cell.getBooleanCellValue());
-            case FORMULA:
-                try {
-                    return cell.getStringCellValue();
-                } catch (IllegalStateException e) {
-                    // fallback numeric
-                    return String.valueOf(cell.getNumericCellValue());
-                }
-            case BLANK:
-            default:
-                return "";
-        }
-    }
-
-    // quick main for testing
-    public static void main(String[] args) throws Exception {
-        // Example usage of findMissingStatuses
-        String poss = "PRE_VALIDATION_FAILURE, POST_VALIDATION_FAILURE, AUTH_ERROR, DATA_MISMATCH";
-        String scenario = "Some run logs: PRE_VALIDATION_FAILURE occurred; then script handled AUTH_ERROR partially.";
-        String missing = findMissingStatuses(poss, scenario);
-        System.out.println("Missing statuses: " + missing);
-        // expected output: "POST_VALIDATION_FAILURE, DATA_MISMATCH"
-
-        // Example Excel processing:
-        // processExcel("C:/temp/input.xlsx", "C:/temp/output.xlsx");
-    }
-}
+            case BOOLEAN: return String.valueOf(cel
