@@ -1,0 +1,137 @@
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+public class MissingStatusFinder {
+
+    // Regex to extract uppercase tokens with underscores or digits, e.g. PRE_VALIDATION_FAILURE, ERROR_1
+    private static final Pattern CAPS_TOKEN_PATTERN = Pattern.compile("\\b[A-Z][A-Z0-9_]+\\b");
+
+    /**
+     * Extracts CAPS tokens from possibleValidations and returns missing ones (not found in scenarioInfo).
+     * Returned as a comma-separated String (empty string if none).
+     *
+     * Uses StringBuilder to build the final string (as requested earlier).
+     */
+    public static String findMissingStatuses(String possibleValidations, String scenarioInfo) {
+        if (possibleValidations == null || possibleValidations.trim().isEmpty()) {
+            return "";
+        }
+        if (scenarioInfo == null) {
+            scenarioInfo = "";
+        }
+
+        // Use a LinkedHashSet to preserve order and remove duplicates
+        Set<String> expectedTokens = new LinkedHashSet<>();
+        Matcher m = CAPS_TOKEN_PATTERN.matcher(possibleValidations);
+        while (m.find()) {
+            expectedTokens.add(m.group());
+        }
+
+        if (expectedTokens.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder missing = new StringBuilder();
+        for (String token : expectedTokens) {
+            // Build regex to check whole-token presence in scenarioInfo
+            // We escape token to be safe, and use word boundaries
+            Pattern tokenPattern = Pattern.compile("\\b" + Pattern.quote(token) + "\\b");
+            Matcher actualMatcher = tokenPattern.matcher(scenarioInfo);
+
+            if (!actualMatcher.find()) {
+                if (missing.length() > 0) {
+                    missing.append(", ");
+                }
+                missing.append(token);
+            }
+        }
+
+        return missing.toString();
+    }
+
+    /**
+     * Example method that reads an input Excel file and writes missing statuses to the 3rd column.
+     * Adjust INPUT_FILE, OUTPUT_FILE, sheet name, and column indices as needed.
+     */
+    public static void processExcel(String inputFilePath, String outputFilePath) throws IOException {
+        // Column indexes (0-based)
+        int expectedColIndex = 0; // POSSIBLE_VALIDATIONS column - A
+        int actualColIndex   = 1; // SCENARIO_INFO column - B
+        int resultColIndex   = 2; // MISSING_STATUS column - C (will be written)
+
+        try (FileInputStream fis = new FileInputStream(inputFilePath);
+             Workbook workbook = new XSSFWorkbook(fis)) {
+
+            Sheet sheet = workbook.getSheetAt(0); // or workbook.getSheet("Sheet1");
+            if (sheet == null) {
+                throw new IllegalArgumentException("Sheet not found in workbook");
+            }
+
+            // Assuming first row is header; start from row 1
+            int firstDataRow = sheet.getFirstRowNum() + 1;
+            int lastRow = sheet.getLastRowNum();
+
+            for (int r = firstDataRow; r <= lastRow; r++) {
+                Row row = sheet.getRow(r);
+                if (row == null) continue;
+
+                Cell expectedCell = row.getCell(expectedColIndex, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+                Cell actualCell   = row.getCell(actualColIndex, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+
+                String expected = expectedCell != null ? getCellStringValue(expectedCell) : "";
+                String actual   = actualCell != null ? getCellStringValue(actualCell) : "";
+
+                String missing = findMissingStatuses(expected, actual);
+
+                // Write to result column
+                Cell resultCell = row.getCell(resultColIndex, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+                resultCell.setCellValue(missing);
+            }
+
+            // Write out to new file (or overwrite)
+            try (FileOutputStream fos = new FileOutputStream(outputFilePath)) {
+                workbook.write(fos);
+            }
+        }
+    }
+
+    private static String getCellStringValue(Cell cell) {
+        if (cell == null) return "";
+        switch (cell.getCellType()) {
+            case STRING: return cell.getStringCellValue();
+            case NUMERIC: return String.valueOf(cell.getNumericCellValue());
+            case BOOLEAN: return String.valueOf(cell.getBooleanCellValue());
+            case FORMULA:
+                try {
+                    return cell.getStringCellValue();
+                } catch (IllegalStateException e) {
+                    // fallback numeric
+                    return String.valueOf(cell.getNumericCellValue());
+                }
+            case BLANK:
+            default:
+                return "";
+        }
+    }
+
+    // quick main for testing
+    public static void main(String[] args) throws Exception {
+        // Example usage of findMissingStatuses
+        String poss = "PRE_VALIDATION_FAILURE, POST_VALIDATION_FAILURE, AUTH_ERROR, DATA_MISMATCH";
+        String scenario = "Some run logs: PRE_VALIDATION_FAILURE occurred; then script handled AUTH_ERROR partially.";
+        String missing = findMissingStatuses(poss, scenario);
+        System.out.println("Missing statuses: " + missing);
+        // expected output: "POST_VALIDATION_FAILURE, DATA_MISMATCH"
+
+        // Example Excel processing:
+        // processExcel("C:/temp/input.xlsx", "C:/temp/output.xlsx");
+    }
+}
