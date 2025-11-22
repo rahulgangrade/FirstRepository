@@ -1,15 +1,13 @@
-Option 1 (Polished & Professional)
+import java.util.Arrays;
 
-"Performing a detailed automation tool feasibility analysis and developing intuitive wireframe designs to showcase potential future implementations and a user-friendly automation solution."
-
-Option 2 (Smoother flow)
-
-"Conducting a detailed feasibility analysis of automation tools and creating intuitive wireframe designs to illustrate future implementation possibilities and a user-friendly automation experience."
-
-Option 3 (More impactful)
-
-"Carrying out an in-depth feasibility analysis for automation tools while designing intuitive wireframes that demonstrate future implementation opportunities and a streamlined, user-friendly automation platform."
-
-Option 4 (Slide-ready & concise)
-
-"Executing detailed automation tool feasibility analysis and designing intuitive wireframes to outline future implementation options and a user-centric automation tool."
+public static String[] splitAndGetCapsAfterColon(String input) {
+    return Arrays.stream(input.split("\\R"))              // split into lines
+            .map(line -> {
+                String[] parts = line.split(":", 2);      // split each line into 2 parts
+                if (parts.length < 2) return "";          // no colon -> empty
+                String right = parts[1].trim();           // part after colon
+                String[] caps = right.split("[^A-Z_]", 2);// take only leading A–Z or _
+                return caps.length == 0 ? "" : caps[0];   // first CAPS token
+            })
+            .toArray(String[]::new);
+}
